@@ -21,7 +21,7 @@ import (
 	"bytes"
 	"sync"
 
-	"github.com/biogo/store/llrb"
+	"code.google.com/p/biogo.store/llrb"
 	"github.com/cockroachdb/cockroach/proto"
 	"github.com/cockroachdb/cockroach/storage/engine"
 	"github.com/cockroachdb/cockroach/util"

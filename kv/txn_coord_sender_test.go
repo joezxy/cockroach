@@ -40,8 +40,7 @@ import (
 // client and associated clock's manual time.
 // TODO(spencer): return a struct.
 func createTestDB() (db *client.KV, eng engine.Engine, clock *hlc.Clock,
-	manual *hlc.ManualClock, lSender *LocalSender,
-	transport multiraft.Transport, err error) {
+	manual *hlc.ManualClock, lSender *LocalSender, err error) {
 	rpcContext := rpc.NewContext(hlc.NewClock(hlc.UnixNano), rpc.LoadInsecureTLSConfig())
 	g := gossip.New(rpcContext, 250*time.Millisecond, "")
 	manual = hlc.NewManualClock(0)
@@ -51,8 +50,7 @@ func createTestDB() (db *client.KV, eng engine.Engine, clock *hlc.Clock,
 	sender := NewTxnCoordSender(lSender, clock, false)
 	db = client.NewKV(sender, nil)
 	db.User = storage.UserRoot
-	transport = multiraft.NewLocalRPCTransport()
-	store := storage.NewStore(clock, eng, db, g, transport)
+	store := storage.NewStore(clock, eng, db, g, multiraft.NewLocalRPCTransport())
 	if err = store.Bootstrap(proto.StoreIdent{NodeID: 1, StoreID: 1}); err != nil {
 		return
 	}
@@ -101,12 +99,11 @@ func createPutRequest(key proto.Key, value []byte, txn *proto.Transaction) *prot
 // transaction metadata and adding multiple requests with same
 // transaction ID updates the last update timestamp.
 func TestTxnCoordSenderAddRequest(t *testing.T) {
-	db, _, clock, manual, ls, transport, err := createTestDB()
+	db, _, clock, manual, ls, err := createTestDB()
 	if err != nil {
 		t.Fatal(err)
 	}
 	coord := getCoord(db)
-	defer transport.Close()
 	defer db.Close()
 	defer ls.Close()
 
@@ -146,11 +143,10 @@ func TestTxnCoordSenderAddRequest(t *testing.T) {
 // TestTxnCoordSenderBeginTransaction verifies that a command sent with a
 // not-nil Txn with empty ID gets a new transaction initialized.
 func TestTxnCoordSenderBeginTransaction(t *testing.T) {
-	db, _, _, _, ls, transport, err := createTestDB()
+	db, _, _, _, ls, err := createTestDB()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer transport.Close()
 	defer db.Close()
 	defer ls.Close()
 
@@ -191,11 +187,10 @@ func TestTxnCoordSenderBeginTransaction(t *testing.T) {
 // TestTxnCoordSenderBeginTransactionMinPriority verifies that when starting
 // a new transaction, a non-zero priority is treated as a minimum value.
 func TestTxnCoordSenderBeginTransactionMinPriority(t *testing.T) {
-	db, _, _, _, ls, transport, err := createTestDB()
+	db, _, _, _, ls, err := createTestDB()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer transport.Close()
 	defer db.Close()
 	defer ls.Close()
 
@@ -239,12 +234,11 @@ func TestTxnCoordSenderKeyRanges(t *testing.T) {
 		{proto.Key("b"), proto.Key("c")},
 	}
 
-	db, _, clock, _, ls, transport, err := createTestDB()
+	db, _, clock, _, ls, err := createTestDB()
 	if err != nil {
 		t.Fatal(err)
 	}
 	coord := getCoord(db)
-	defer transport.Close()
 	defer db.Close()
 	defer ls.Close()
 	txn := newTxn(db, clock, proto.Key("a"))
@@ -273,12 +267,11 @@ func TestTxnCoordSenderKeyRanges(t *testing.T) {
 // TestTxnCoordSenderMultipleTxns verifies correct operation with
 // multiple outstanding transactions.
 func TestTxnCoordSenderMultipleTxns(t *testing.T) {
-	db, _, clock, _, ls, transport, err := createTestDB()
+	db, _, clock, _, ls, err := createTestDB()
 	if err != nil {
 		t.Fatal(err)
 	}
 	coord := getCoord(db)
-	defer transport.Close()
 	defer db.Close()
 	defer ls.Close()
 
@@ -299,12 +292,11 @@ func TestTxnCoordSenderMultipleTxns(t *testing.T) {
 // TestTxnCoordSenderHeartbeat verifies periodic heartbeat of the
 // transaction record.
 func TestTxnCoordSenderHeartbeat(t *testing.T) {
-	db, _, clock, manual, ls, transport, err := createTestDB()
+	db, _, clock, manual, ls, err := createTestDB()
 	if err != nil {
 		t.Fatal(err)
 	}
 	coord := getCoord(db)
-	defer transport.Close()
 	defer db.Close()
 	defer ls.Close()
 
@@ -376,11 +368,10 @@ func verifyCleanup(key proto.Key, db *client.KV, eng engine.Engine, t *testing.T
 // sends resolve write intent requests and removes the transaction
 // from the txns map.
 func TestTxnCoordSenderEndTxn(t *testing.T) {
-	db, eng, clock, _, ls, transport, err := createTestDB()
+	db, eng, clock, _, ls, err := createTestDB()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer transport.Close()
 	defer db.Close()
 	defer ls.Close()
 
@@ -415,11 +406,10 @@ func TestTxnCoordSenderEndTxn(t *testing.T) {
 // TestTxnCoordSenderCleanupOnAborted verifies that if a txn receives a
 // TransactionAbortedError, the coordinator cleans up the transaction.
 func TestTxnCoordSenderCleanupOnAborted(t *testing.T) {
-	db, eng, clock, _, ls, transport, err := createTestDB()
+	db, eng, clock, _, ls, err := createTestDB()
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer transport.Close()
 	defer db.Close()
 	defer ls.Close()
 
@@ -471,12 +461,11 @@ func TestTxnCoordSenderCleanupOnAborted(t *testing.T) {
 // TestTxnCoordSenderGC verifies that the coordinator cleans up extant
 // transactions after the lastUpdateTS exceeds the timeout.
 func TestTxnCoordSenderGC(t *testing.T) {
-	db, _, clock, manual, ls, transport, err := createTestDB()
+	db, _, clock, manual, ls, err := createTestDB()
 	if err != nil {
 		t.Fatal(err)
 	}
 	coord := getCoord(db)
-	defer transport.Close()
 	defer db.Close()
 	defer ls.Close()
 

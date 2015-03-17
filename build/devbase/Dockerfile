@@ -14,9 +14,9 @@ ENV ROACHPATH $GOPATH/src/github.com/cockroachdb
 RUN mkdir -p $ROACHPATH && \
  ln -s "${ROACHPATH}/cockroach" /cockroach
 
-WORKDIR ${ROACHPATH}/cockroach
+WORKDIR /cockroach
 
-ADD . ${ROACHPATH}/cockroach/build/devbase/
+ADD . /cockroach/build/devbase/
 RUN ["./build/devbase/godeps-docker.sh"]
 
 CMD ["/bin/bash"]

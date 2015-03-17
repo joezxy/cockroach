@@ -30,8 +30,6 @@ import (
 // visible until commit, and then are all visible after commit.
 func TestBatchBasics(t *testing.T) {
 	e := NewInMem(proto.Attributes{}, 1<<20)
-	defer e.Stop()
-
 	b := e.NewBatch()
 	if err := b.Put(proto.EncodedKey("a"), []byte("value")); err != nil {
 		t.Fatal(err)
@@ -94,8 +92,6 @@ func TestBatchBasics(t *testing.T) {
 
 func TestBatchGet(t *testing.T) {
 	e := NewInMem(proto.Attributes{}, 1<<20)
-	defer e.Stop()
-
 	b := e.NewBatch()
 	// Write initial values, then write to batch.
 	if err := e.Put(proto.EncodedKey("b"), []byte("value")); err != nil {
@@ -140,7 +136,6 @@ func compareMergedValues(result, expected []byte) bool {
 
 func TestBatchMerge(t *testing.T) {
 	b := NewInMem(proto.Attributes{}, 1<<20).NewBatch()
-	defer b.Stop()
 
 	// Write batch put, delete & merge.
 	if err := b.Put(proto.EncodedKey("a"), appender("a-value")); err != nil {
@@ -192,8 +187,6 @@ func TestBatchMerge(t *testing.T) {
 
 func TestBatchProto(t *testing.T) {
 	e := NewInMem(proto.Attributes{}, 1<<20)
-	defer e.Stop()
-
 	b := e.NewBatch()
 	kv := &proto.RawKeyValue{Key: proto.EncodedKey("a"), Value: []byte("value")}
 	PutProto(b, proto.EncodedKey("proto"), kv)
@@ -233,8 +226,6 @@ func TestBatchProto(t *testing.T) {
 
 func TestBatchScan(t *testing.T) {
 	e := NewInMem(proto.Attributes{}, 1<<20)
-	defer e.Stop()
-
 	b := e.NewBatch()
 	existingVals := []proto.RawKeyValue{
 		{Key: proto.EncodedKey("a"), Value: []byte("1")},
@@ -322,8 +313,6 @@ func TestBatchScan(t *testing.T) {
 // a single deleted value returns nothing.
 func TestBatchScanWithDelete(t *testing.T) {
 	e := NewInMem(proto.Attributes{}, 1<<20)
-	defer e.Stop()
-
 	b := e.NewBatch()
 	// Write initial value, then delete via batch.
 	if err := e.Put(proto.EncodedKey("a"), []byte("value")); err != nil {
@@ -346,8 +335,6 @@ func TestBatchScanWithDelete(t *testing.T) {
 // max on a scan is still reached.
 func TestBatchScanMaxWithDeleted(t *testing.T) {
 	e := NewInMem(proto.Attributes{}, 1<<20)
-	defer e.Stop()
-
 	b := e.NewBatch()
 	// Write two values.
 	if err := e.Put(proto.EncodedKey("a"), []byte("value1")); err != nil {
@@ -376,8 +363,6 @@ func TestBatchScanMaxWithDeleted(t *testing.T) {
 // batches, but worth verifying.
 func TestBatchConcurrency(t *testing.T) {
 	e := NewInMem(proto.Attributes{}, 1<<20)
-	defer e.Stop()
-
 	b := e.NewBatch()
 	// Write a merge to the batch.
 	if err := b.Merge(proto.EncodedKey("a"), appender("bar")); err != nil {

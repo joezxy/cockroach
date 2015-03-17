@@ -23,8 +23,8 @@ import (
 	"container/list"
 	"fmt"
 
-	"github.com/biogo/store/interval"
-	"github.com/biogo/store/llrb"
+	"code.google.com/p/biogo.store/interval"
+	"code.google.com/p/biogo.store/llrb"
 )
 
 // EvictionPolicy is the cache eviction policy enum.

@@ -15,15 +15,13 @@
 //
 // Author: Spencer Kimball (spencer.kimball@gmail.com)
 
-// TODO(pmattis): Move this into C++.
-
 package engine
 
 import (
 	"bytes"
 	"runtime/debug"
 
-	"github.com/biogo/store/llrb"
+	"code.google.com/p/biogo.store/llrb"
 	"github.com/cockroachdb/cockroach/proto"
 	"github.com/cockroachdb/cockroach/util"
 )
@@ -53,10 +51,6 @@ func (b *Batch) Put(key proto.EncodedKey, value []byte) error {
 	if len(key) == 0 {
 		return emptyKeyError()
 	}
-	// Need to make a copy of key and value as the caller may reuse
-	// them.
-	key = append(proto.EncodedKey(nil), key...)
-	value = append([]byte(nil), value...)
 	b.updates.Insert(BatchPut{proto.RawKeyValue{Key: key, Value: value}})
 	return nil
 }
@@ -129,8 +123,6 @@ func (b *Batch) Clear(key proto.EncodedKey) error {
 	if len(key) == 0 {
 		return emptyKeyError()
 	}
-	// Need to make a copy of key as the caller may reuse it.
-	key = append(proto.EncodedKey(nil), key...)
 	b.updates.Insert(BatchDelete{proto.RawKeyValue{Key: key}})
 	return nil
 }
@@ -146,8 +138,6 @@ func (b *Batch) Merge(key proto.EncodedKey, value []byte) error {
 	if len(key) == 0 {
 		return emptyKeyError()
 	}
-	// Need to make a copy of key as the caller may reuse it.
-	key = append(proto.EncodedKey(nil), key...)
 	val := b.updates.Get(proto.RawKeyValue{Key: key})
 	if val != nil {
 		switch t := val.(type) {
@@ -171,8 +161,6 @@ func (b *Batch) Merge(key proto.EncodedKey, value []byte) error {
 			b.updates.Insert(BatchMerge{proto.RawKeyValue{Key: key, Value: mergedBytes}})
 		}
 	} else {
-		// Need to make a copy of value as the caller may reuse it.
-		value = append([]byte(nil), value...)
 		b.updates.Insert(BatchMerge{proto.RawKeyValue{Key: key, Value: value}})
 	}
 	return nil
@@ -224,11 +212,6 @@ func (b *Batch) SetGCTimeouts(minTxnTS, minRCacheTS int64) {
 // ApproximateSize returns an error if called on a Batch.
 func (b *Batch) ApproximateSize(start, end proto.EncodedKey) (uint64, error) {
 	return 0, util.Errorf("cannot get approximate size from a Batch")
-}
-
-// Flush returns an error if called on a Batch.
-func (b *Batch) Flush() error {
-	return util.Errorf("cannot flush a Batch")
 }
 
 // NewIterator returns an iterator over Batch. Batch iterators are

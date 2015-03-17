@@ -15,13 +15,11 @@
 //
 // Author: Spencer Kimball (spencer.kimball@gmail.com)
 
-syntax = "proto2";
-package cockroach.proto;
-option go_package = "proto";
+package proto;
 
-import "cockroach/proto/config.proto";
-import "cockroach/proto/data.proto";
-import "gogoproto/gogo.proto";
+import "config.proto";
+import "data.proto";
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
 // A GenericError is a generic representation of a go error including
 // the string message and whether or not the error is retryable.
@@ -146,3 +144,4 @@ message Error {
   optional OpRequiresTxnError op_requires_txn = 12;
   optional ConditionFailedError condition_failed = 13;
 }
+

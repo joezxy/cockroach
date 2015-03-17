@@ -20,21 +20,16 @@
 
 namespace {
 
-const uint8_t kEscape1     = 0x00;
-const uint8_t kEscape2     = 0xff;
-const uint8_t kEscapedTerm = 0x01;
-const uint8_t kEscapedNul  = 0xff;
-const uint8_t kEscapedFF   = 0x00;
+const unsigned char kEscape      = 0x00;
+const unsigned char kEscapedTerm = 0x01;
+const unsigned char kEscapedNul  = 0xff;
 
 template <typename T>
-bool DecodeUvarint(rocksdb::Slice* buf, T* value) {
+bool DecodeVarint(rocksdb::Slice* buf, T* value) {
   if (buf->empty()) {
     return false;
   }
-  int len = (*buf)[0] - 8;
-  if (len < 0) {
-    return false;
-  }
+  int len = (*buf)[0];
   if ((len + 1) > buf->size()) {
     return false;
   }
@@ -55,41 +50,26 @@ bool DecodeUvarint(rocksdb::Slice* buf, T* value) {
 
 }  // namespace
 
-// TODO(pmattis): These functions are not tested. Doing so is made
-// difficult by "go test" because _test.go files cannot 'import "C"'.
 bool DecodeBytes(rocksdb::Slice* buf, std::string* decoded) {
-  const uint8_t *data = reinterpret_cast<const uint8_t*>(buf->data());
-  if (buf->size() > 0 && data[0] == kEscape2) {
-    if (buf->size() == 1) {
-      return false;
-    }
-    if (data[1] != kEscapedFF) {
-      return false;
-    }
-    decoded->append("\xff", 1);
-    buf->remove_prefix(2);
-  }
-
   int copyStart = 0;
   for (int i = 0, n = int(buf->size()) - 1; i < n; ++i) {
-    uint8_t v = data[i];
-    if (v == kEscape1) {
+    unsigned char v = (*buf)[i];
+    if (v == kEscape) {
       decoded->append(buf->data() + copyStart, i-copyStart);
-      v = data[++i];
+      v = (*buf)[++i];
       if (v == kEscapedTerm) {
         buf->remove_prefix(i + 1);
         return true;
       }
-      if (v != kEscapedNul) {
-        return false;
+      if (v == kEscapedNul) {
+        decoded->append("\0", 1);
       }
-      decoded->append("\0", 1);
       copyStart = i + 1;
     }
   }
   return false;
 }
 
-bool DecodeUvarint64(rocksdb::Slice* buf, uint64_t* value) {
-  return DecodeUvarint(buf, value);
+bool DecodeVarint64(rocksdb::Slice* buf, uint64_t* value) {
+  return DecodeVarint(buf, value);
 }

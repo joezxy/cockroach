@@ -15,14 +15,12 @@
 //
 // Author: Spencer Kimball (spencer.kimball@gmail.com)
 
-syntax = "proto2";
-package cockroach.proto;
-option go_package = "proto";
+package proto;
 
-import "cockroach/proto/api.proto";
-import "cockroach/proto/config.proto";
-import "cockroach/proto/data.proto";
-import "gogoproto/gogo.proto";
+import "api.proto";
+import "config.proto";
+import "data.proto";
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
 // An InternalRangeLookupRequest is arguments to the
 // InternalRangeLookup() method. It specifies the key for which the

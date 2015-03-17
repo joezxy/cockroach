@@ -16,12 +16,10 @@
 // Author: Jiajia Han (hanjia18@gmail.com)
 // Author: Spencer Kimball (spencer.kimball@gmail.com)
 
-syntax = "proto2";
-package cockroach.proto;
-option go_package = "proto";
+package proto;
 
-import "cockroach/proto/config.proto";
-import "gogoproto/gogo.proto";
+import "config.proto";
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
 // Timestamp represents a state of the hybrid logical clock.
 message Timestamp {

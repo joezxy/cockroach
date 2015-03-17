@@ -81,8 +81,6 @@ func (ts *txnSender) Send(call *Call) {
 	}
 }
 
-// Close is a noop for the txnSender. Note that the wrapped sender
-// isn't closed because the txnSender is closed immediately upon
-// transaction completion and the wrapped sender is reused.
+// Close is a noop for the txnSender.
 func (ts *txnSender) Close() {
 }

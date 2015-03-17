@@ -22,6 +22,7 @@ import (
 	"math"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,12 +159,71 @@ func TestNextKey(t *testing.T) {
 	}
 }
 
-func TestKeyString(t *testing.T) {
-	if Key("hello").String() != `"hello"` {
-		t.Errorf("expected key to display pretty version: %s", Key("hello"))
+// TestPrevKey tests that the method for creating the predecessor of a Key
+// works as expected.
+func TestPrevKey(t *testing.T) {
+	testCases := []struct {
+		key  Key
+		prev Key
+	}{
+		{Key("\x00"), Key("")},
+		{Key("test key\x00"), Key("test key")},
+		// "test key\x01" -> "test key\x00\xff..."
+		{
+			Key("test key\x01"),
+			Key(strings.Join([]string{
+				"test key\x00",
+				strings.Repeat("\xff", KeyMaxLength-9)}, "")),
+		},
+		// "\x01" -> "\x00\xff..."
+		{
+			Key("\x01"),
+			Key(strings.Join([]string{
+				"\x00",
+				strings.Repeat("\xff", KeyMaxLength-1)}, "")),
+		},
+		// "\xff...\x01" -> "\xff...\x00"
+		{
+			Key(strings.Join([]string{
+				strings.Repeat("\xff", KeyMaxLength-1),
+				"\x01"}, "")),
+			Key(strings.Join([]string{
+				strings.Repeat("\xff", KeyMaxLength-1), "\x00"}, "")),
+		},
+		// "\xff..." -> "\xff...\xfe"
+		{
+			KeyMax,
+			Key(strings.Join([]string{
+				strings.Repeat("\xff", KeyMaxLength-1), "\xfe"}, "")),
+		},
+		// "\xff...\x00" -> "\xff..." with the \x00 removed only
+		{
+			Key(strings.Join([]string{
+				strings.Repeat("\xff", KeyMaxLength-1),
+				"\x00"}, "")),
+			Key(strings.Repeat("\xff", KeyMaxLength-1)),
+		},
 	}
-	if KeyMax.String() != `"\xff\xff"` {
-		t.Errorf("expected key max to display pretty version: %s", KeyMax)
+	for i, c := range testCases {
+		if !c.key.Prev().Equal(c.prev) {
+			t.Fatalf("%d: unexpected prev key for %d: %d", i, c.key, c.key.Prev())
+		}
+	}
+
+	defer func() {
+		if err := recover(); err == nil {
+			t.Error("Should panic when trying to find prev of keymin")
+		}
+	}()
+	KeyMin.Prev()
+}
+
+func TestKeyString(t *testing.T) {
+	if KeyMax.String() != "\xff..." {
+		t.Errorf("expected key max to display a compact version: %s", KeyMax.String())
+	}
+	if str := Key(append([]byte("foo"), KeyMax...)).String(); str != "foo\xff..." {
+		t.Errorf("expected \"foo\xff...\"; got %q", str)
 	}
 }
 

@@ -350,16 +350,15 @@ func fillRange(store *storage.Store, raftID int64, prefix proto.Key, bytes int64
 	}
 }
 
-// TestStoreZoneUpdateAndRangeSplit verifies that modifying the zone
-// configuration changes range max bytes and Range.maybeSplit() takes
-// max bytes into account when deciding whether to enqueue a range for
-// splitting. It further verifies that the range is in fact split on
-// exceeding zone's RangeMaxBytes.
-func TestStoreZoneUpdateAndRangeSplit(t *testing.T) {
+// TestStoreShouldSplit verifies that shouldSplit() takes into account the
+// zone configuration to figure out what the maximum size of a range is.
+// It further verifies that the range is in fact split on exceeding
+// zone's RangeMaxBytes.
+func TestStoreShouldSplit(t *testing.T) {
 	store := createTestStore(t)
 	defer store.Stop()
 
-	// Rewrite zone config with range max bytes set to 64K.
+	// Rewrite zone config with range max bytes set to 256K.
 	zoneConfig := &proto.ZoneConfig{
 		ReplicaAttrs: []proto.Attributes{
 			{},
@@ -367,29 +366,30 @@ func TestStoreZoneUpdateAndRangeSplit(t *testing.T) {
 			{},
 		},
 		RangeMinBytes: 1 << 8,
-		RangeMaxBytes: 1 << 16,
+		RangeMaxBytes: 1 << 18,
 	}
 	if err := store.DB().PutProto(engine.MakeKey(engine.KeyConfigZonePrefix, engine.KeyMin), zoneConfig); err != nil {
 		t.Fatal(err)
 	}
 
-	// See if the range's max bytes is modified via gossip callback within 50ms.
 	rng := store.LookupRange(engine.KeyMin, nil)
-	if err := util.IsTrueWithin(func() bool {
-		return rng.GetMaxBytes() == zoneConfig.RangeMaxBytes
-	}, 50*time.Millisecond); err != nil {
-		t.Fatalf("failed to notice range max bytes update: %s", err)
+	if ok := rng.ShouldSplit(); ok {
+		t.Errorf("range should not split with no data in it")
 	}
 
 	maxBytes := zoneConfig.RangeMaxBytes
 	fillRange(store, rng.Desc().RaftID, proto.Key("test"), maxBytes, t)
 
+	if ok := rng.ShouldSplit(); !ok {
+		t.Errorf("range should split after writing %d bytes", maxBytes)
+	}
+
 	// Verify that the range is in fact split (give it a second for very slow test machines).
 	if err := util.IsTrueWithin(func() bool {
-		newRng := store.LookupRange(proto.Key("\xff\x00"), nil)
+		newRng := store.LookupRange(engine.KeyMax[:engine.KeyMaxLength-1], nil)
 		return newRng != rng
 	}, time.Second); err != nil {
-		t.Errorf("expected range to split within 1s")
+		t.Errorf("expected range to split in 1s")
 	}
 }
 

@@ -434,8 +434,6 @@ func TestMVCCGetAndDelete(t *testing.T) {
 
 func TestMVCCDeleteMissingKey(t *testing.T) {
 	engine := NewInMem(proto.Attributes{}, 1<<20)
-	defer engine.Stop()
-
 	if err := MVCCDelete(engine, nil, testKey1, makeTS(1, 0), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -1224,8 +1222,6 @@ func TestValidSplitKeys(t *testing.T) {
 func TestFindSplitKey(t *testing.T) {
 	raftID := int64(1)
 	engine := NewInMem(proto.Attributes{}, 1<<20)
-	defer engine.Stop()
-
 	ms := &MVCCStats{}
 	// Generate a series of KeyValues, each containing targetLength
 	// bytes, writing key #i to (encoded) key #i through the MVCC
@@ -1333,8 +1329,6 @@ func TestFindValidSplitKeys(t *testing.T) {
 
 	for i, test := range testCases {
 		engine := NewInMem(proto.Attributes{}, 1<<20)
-		defer engine.Stop()
-
 		ms := &MVCCStats{}
 		val := proto.Value{Bytes: []byte(strings.Repeat("X", 10))}
 		for _, k := range test.keys {
@@ -1413,8 +1407,6 @@ func TestFindBalancedSplitKeys(t *testing.T) {
 
 	for i, test := range testCases {
 		engine := NewInMem(proto.Attributes{}, 1<<20)
-		defer engine.Stop()
-
 		ms := &MVCCStats{}
 		var expKey proto.Key
 		for j, keySize := range test.keySizes {

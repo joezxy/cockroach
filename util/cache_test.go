@@ -24,8 +24,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/biogo/store/interval"
-	"github.com/biogo/store/llrb"
+	"code.google.com/p/biogo.store/interval"
+	"code.google.com/p/biogo.store/llrb"
 )
 
 type testKey string

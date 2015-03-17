@@ -165,7 +165,6 @@ func (tc *testContext) Start(t *testing.T) {
 
 func (tc *testContext) Stop() {
 	tc.store.Stop()
-	tc.transport.Close()
 }
 
 // initConfigs creates default configuration entries.
@@ -211,11 +210,7 @@ func TestRangeContains(t *testing.T) {
 
 	e := engine.NewInMem(proto.Attributes{Attrs: []string{"dc1", "mem"}}, 1<<20)
 	clock := hlc.NewClock(hlc.UnixNano)
-	transport := multiraft.NewLocalRPCTransport()
-	defer transport.Close()
-	store := NewStore(clock, e, nil, nil, multiraft.NewLocalRPCTransport())
-	defer store.Stop()
-	r, err := NewRange(desc, store)
+	r, err := NewRange(desc, NewStore(clock, e, nil, nil, multiraft.NewLocalRPCTransport()))
 	if err != nil {
 		t.Fatal(err)
 	}

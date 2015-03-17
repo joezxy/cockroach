@@ -23,6 +23,7 @@ import (
 
 	"github.com/cockroachdb/cockroach/proto"
 	"github.com/cockroachdb/cockroach/storage/engine"
+	"github.com/cockroachdb/cockroach/util"
 )
 
 var incR = proto.IncrementResponse{
@@ -256,10 +257,19 @@ func TestResponseCacheShouldCache(t *testing.T) {
 // TestResponseCacheGC verifies that response cache entries are
 // garbage collected periodically.
 func TestResponseCacheGC(t *testing.T) {
-	eng := engine.NewInMem(proto.Attributes{Attrs: []string{"ssd"}}, 1<<30)
-	defer eng.Stop()
+	loc := util.CreateTempDirectory()
+	rocksdb := engine.NewRocksDB(proto.Attributes{Attrs: []string{"ssd"}}, loc, 1<<30)
+	if err := rocksdb.Start(); err != nil {
+		t.Fatalf("could not create new rocksdb db instance at %s: %v", loc, err)
+	}
+	defer func(t *testing.T) {
+		rocksdb.Stop()
+		if err := rocksdb.Destroy(); err != nil {
+			t.Errorf("could not destroy rocksdb db at %s: %v", loc, err)
+		}
+	}(t)
 
-	rc := NewResponseCache(1, eng)
+	rc := NewResponseCache(1, rocksdb)
 	cmdID := makeCmdID(1, 1)
 
 	// Add response for cmdID with timestamp at time=1ns.
@@ -268,16 +278,16 @@ func TestResponseCacheGC(t *testing.T) {
 	if err := rc.PutResponse(cmdID, &copyIncR); err != nil {
 		t.Fatalf("unexpected error putting responpse: %v", err)
 	}
-	eng.SetGCTimeouts(0, 0) // avoids GC
-	eng.CompactRange(nil, nil)
+	rocksdb.SetGCTimeouts(0, 0) // avoids GC
+	rocksdb.CompactRange(nil, nil)
 	val := proto.IncrementResponse{}
 	if ok, err := rc.GetResponse(cmdID, &val); !ok || err != nil || val.NewValue != 1 {
 		t.Fatalf("unexpected response or error: %t, %v, %+v", ok, err, val)
 	}
 
 	// Now set minRCacheTS to 1, which will GC.
-	eng.SetGCTimeouts(0, 1)
-	eng.CompactRange(nil, nil)
+	rocksdb.SetGCTimeouts(0, 1)
+	rocksdb.CompactRange(nil, nil)
 	if ok, err := rc.GetResponse(cmdID, &val); ok || err != nil {
 		t.Errorf("unexpected response or error: %t, %v", ok, err)
 	}

@@ -15,14 +15,12 @@
 //
 // Author: Spencer Kimball (spencer.kimball@gmail.com)
 
-syntax = "proto2";
-package cockroach.proto;
-option go_package = "proto";
+package proto;
 
-import "cockroach/proto/config.proto";
-import "cockroach/proto/data.proto";
-import "cockroach/proto/errors.proto";
-import "gogoproto/gogo.proto";
+import "config.proto";
+import "data.proto";
+import "errors.proto";
+import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 
 // ClientCmdID provides a unique ID for client commands. Clients which
 // provide ClientCmdID gain operation idempotence. In other words,

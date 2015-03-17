@@ -26,9 +26,9 @@
 #include "rocksdb/merge_operator.h"
 #include "rocksdb/options.h"
 #include "rocksdb/table.h"
-#include "cockroach/proto/api.pb.h"
-#include "cockroach/proto/data.pb.h"
-#include "cockroach/proto/internal.pb.h"
+#include "api.pb.h"
+#include "data.pb.h"
+#include "internal.pb.h"
 #include "db.h"
 #include "encoding.h"
 
@@ -44,7 +44,6 @@ struct DBBatch {
 
 struct DBEngine {
   rocksdb::DB* rep;
-  rocksdb::Env* memenv;
 };
 
 struct DBIterator {
@@ -111,7 +110,7 @@ rocksdb::ReadOptions MakeReadOptions(DBSnapshot* snap) {
 
 // GetResponseHeader extracts the response header for each type of
 // response in the ReadWriteCmdResponse union.
-const cockroach::proto::ResponseHeader* GetResponseHeader(const cockroach::proto::ReadWriteCmdResponse& rwResp) {
+const proto::ResponseHeader* GetResponseHeader(const proto::ReadWriteCmdResponse& rwResp) {
   if (rwResp.has_put()) {
     return &rwResp.put().header();
   } else if (rwResp.has_conditional_put()) {
@@ -195,7 +194,7 @@ class DBCompactionFilter : public rocksdb::CompactionFilter {
     decKey.remove_prefix(kKeyLocalRangePrefixSize);
 
     uint64_t dummy;
-    if (!DecodeUvarint64(&decKey, &dummy)) {
+    if (!DecodeVarint64(&decKey, &dummy)) {
       return false;
     }
 
@@ -239,7 +238,7 @@ class DBCompactionFilter : public rocksdb::CompactionFilter {
       return false;
     }
     // Parse MVCC metadata for inlined value.
-    cockroach::proto::MVCCMetadata meta;
+    proto::MVCCMetadata meta;
     if (!meta.ParseFromArray(existing_value.data(), existing_value.size())) {
       // *error_msg = (char*)"failed to parse mvcc metadata entry";
       return false;
@@ -251,12 +250,12 @@ class DBCompactionFilter : public rocksdb::CompactionFilter {
     // Response cache rows are GC'd if their timestamp is older than the
     // response cache GC timeout.
     if (is_rcache) {
-      cockroach::proto::ReadWriteCmdResponse rwResp;
+      proto::ReadWriteCmdResponse rwResp;
       if (!rwResp.ParseFromArray(meta.value().bytes().data(), meta.value().bytes().size())) {
         // *error_msg = (char*)"failed to parse response cache entry";
         return false;
       }
-      const cockroach::proto::ResponseHeader* header = GetResponseHeader(rwResp);
+      const proto::ResponseHeader* header = GetResponseHeader(rwResp);
       if (header == NULL) {
         // *error_msg = (char*)"failed to parse response cache header";
         return false;
@@ -269,7 +268,7 @@ class DBCompactionFilter : public rocksdb::CompactionFilter {
       // the system-wide minimum write intent timestamp. This
       // system-wide minimum write intent is periodically computed via
       // map-reduce over all ranges and gossiped.
-      cockroach::proto::Transaction txn;
+      proto::Transaction txn;
       if (!txn.ParseFromArray(meta.value().bytes().data(), meta.value().bytes().size())) {
         // *error_msg = (char*)"failed to parse transaction entry";
         return false;
@@ -332,37 +331,37 @@ bool WillOverflow(int64_t a, int64_t b) {
 }
 
 // Method used to sort InternalTimeSeriesSamples.
-bool TimeSeriesSampleOrdering(const cockroach::proto::InternalTimeSeriesSample* a,
-        const cockroach::proto::InternalTimeSeriesSample* b) {
+bool TimeSeriesSampleOrdering(const proto::InternalTimeSeriesSample* a,
+        const proto::InternalTimeSeriesSample* b) {
     return a->offset() < b->offset();
 }
 
 // IsTimeSeriesData returns true if the given protobuffer Value contains a
 // TimeSeriesData message.
-bool IsTimeSeriesData(const cockroach::proto::Value *val) {
+bool IsTimeSeriesData(const proto::Value *val) {
     return val->has_tag()
-        && val->tag() == cockroach::proto::InternalValueType_Name(cockroach::proto::_CR_TS);
+        && val->tag() == proto::InternalValueType_Name(proto::_CR_TS);
 }
 
-long GetIntMax(const cockroach::proto::InternalTimeSeriesSample *sample) {
+long GetIntMax(const proto::InternalTimeSeriesSample *sample) {
     if (sample->has_int_max()) return sample->int_max();
     if (sample->has_int_sum()) return sample->int_sum();
     return std::numeric_limits<long>::min();
 }
 
-long GetIntMin(const cockroach::proto::InternalTimeSeriesSample *sample) {
+long GetIntMin(const proto::InternalTimeSeriesSample *sample) {
     if (sample->has_int_min()) return sample->int_min();
     if (sample->has_int_sum()) return sample->int_sum();
     return std::numeric_limits<long>::max();
 }
 
-float GetFloatMax(const cockroach::proto::InternalTimeSeriesSample *sample) {
+float GetFloatMax(const proto::InternalTimeSeriesSample *sample) {
     if (sample->has_float_max()) return sample->float_max();
     if (sample->has_float_sum()) return sample->float_sum();
     return std::numeric_limits<float>::min();
 }
 
-float GetFloatMin(const cockroach::proto::InternalTimeSeriesSample *sample) {
+float GetFloatMin(const proto::InternalTimeSeriesSample *sample) {
     if (sample->has_float_min()) return sample->float_min();
     if (sample->has_float_sum()) return sample->float_sum();
     return std::numeric_limits<float>::max();
@@ -371,8 +370,8 @@ float GetFloatMin(const cockroach::proto::InternalTimeSeriesSample *sample) {
 // AccumulateTimeSeriesSamples accumulates the individual values of two
 // InternalTimeSeriesSamples which have a matching timestamp. The dest parameter
 // is modified to contain the accumulated values.
-void AccumulateTimeSeriesSamples(cockroach::proto::InternalTimeSeriesSample* dest,
-        const cockroach::proto::InternalTimeSeriesSample &src) {
+void AccumulateTimeSeriesSamples(proto::InternalTimeSeriesSample* dest,
+        const proto::InternalTimeSeriesSample &src) {
     // Accumulate integer values
     int total_int_count = dest->int_count() + src.int_count();
     if (total_int_count > 1) {
@@ -401,11 +400,11 @@ void AccumulateTimeSeriesSamples(cockroach::proto::InternalTimeSeriesSample* des
 // InternalTimeSeriesData messages. The messages cannot be merged if they have
 // different start timestamps or sample durations. Returns true if the merge is
 // successful.
-bool MergeTimeSeriesValues(cockroach::proto::Value *left, const cockroach::proto::Value &right,
+bool MergeTimeSeriesValues(proto::Value *left, const proto::Value &right,
         bool full_merge, rocksdb::Logger* logger) {
     // Attempt to parse TimeSeriesData from both Values.
-    cockroach::proto::InternalTimeSeriesData left_ts;
-    cockroach::proto::InternalTimeSeriesData right_ts;
+    proto::InternalTimeSeriesData left_ts;
+    proto::InternalTimeSeriesData right_ts;
     if (!left_ts.ParseFromString(left->bytes())) {
         rocksdb::Warn(logger,
                 "left InternalTimeSeriesData could not be parsed from bytes.");
@@ -442,7 +441,7 @@ bool MergeTimeSeriesValues(cockroach::proto::Value *left, const cockroach::proto
 
     // Initialize new_ts and its primitive data fields. Values from the left and
     // right collections will be merged into the new collection.
-    cockroach::proto::InternalTimeSeriesData new_ts;
+    proto::InternalTimeSeriesData new_ts;
     new_ts.set_start_timestamp_nanos(left_ts.start_timestamp_nanos());
     new_ts.set_sample_duration_nanos(left_ts.sample_duration_nanos());
 
@@ -475,7 +474,7 @@ bool MergeTimeSeriesValues(cockroach::proto::Value *left, const cockroach::proto
         // offset.  Accumulate data from all samples at the front of either left
         // or right which match the selected timestamp. This behavior is needed
         // because each side may individually have duplicated offsets.
-        cockroach::proto::InternalTimeSeriesSample* ns = new_ts.add_samples();
+        proto::InternalTimeSeriesSample* ns = new_ts.add_samples();
         ns->set_offset(next_offset);
         while (left_front != left_end && left_front->offset() == ns->offset()) {
             AccumulateTimeSeriesSamples(ns, *left_front);
@@ -492,7 +491,7 @@ bool MergeTimeSeriesValues(cockroach::proto::Value *left, const cockroach::proto
     return true;
 }
 
-bool MergeValues(cockroach::proto::Value *left, const cockroach::proto::Value &right,
+bool MergeValues(proto::Value *left, const proto::Value &right,
         bool full_merge, rocksdb::Logger* logger) {
     if (left->has_bytes()) {
         if (!right.has_bytes()) {
@@ -537,7 +536,7 @@ bool MergeValues(cockroach::proto::Value *left, const cockroach::proto::Value &r
 
 
 // MergeResult serializes the result MVCCMetadata value into a byte slice.
-DBStatus MergeResult(cockroach::proto::MVCCMetadata* meta, DBString* result) {
+DBStatus MergeResult(proto::MVCCMetadata* meta, DBString* result) {
   // TODO(pmattis): Should recompute checksum here. Need a crc32
   // implementation and need to verify the checksumming is identical
   // to what is being done in Go. Zlib's crc32 should be sufficient.
@@ -578,7 +577,7 @@ class DBMergeOperator : public rocksdb::MergeOperator {
     // read of the key). In effect, there is no propagation of error
     // information to the client.
 
-    cockroach::proto::MVCCMetadata meta;
+    proto::MVCCMetadata meta;
     if (existing_value != NULL) {
       if (!meta.ParseFromArray(existing_value->data(), existing_value->size())) {
         // Corrupted existing value.
@@ -605,7 +604,7 @@ class DBMergeOperator : public rocksdb::MergeOperator {
       const std::deque<rocksdb::Slice>& operand_list,
       std::string* new_value,
       rocksdb::Logger* logger) const {
-    cockroach::proto::MVCCMetadata meta;
+    proto::MVCCMetadata meta;
 
     for (int i = 0; i < operand_list.size(); i++) {
       if (!MergeOne(&meta, operand_list[i], false, logger)) {
@@ -621,11 +620,11 @@ class DBMergeOperator : public rocksdb::MergeOperator {
   }
 
  private:
-  bool MergeOne(cockroach::proto::MVCCMetadata* meta,
+  bool MergeOne(proto::MVCCMetadata* meta,
                 const rocksdb::Slice& operand,
                 bool full_merge,
                 rocksdb::Logger* logger) const {
-    cockroach::proto::MVCCMetadata operand_meta;
+    proto::MVCCMetadata operand_meta;
     if (!operand_meta.ParseFromArray(operand.data(), operand.size())) {
       rocksdb::Warn(logger, "corrupted operand value");
       return false;
@@ -698,8 +697,7 @@ class DBLogger : public rocksdb::Logger {
 
 DBStatus DBOpen(DBEngine **db, DBSlice dir, DBOptions db_opts) {
   rocksdb::BlockBasedTableOptions table_options;
-  table_options.block_cache = rocksdb::NewLRUCache(
-      db_opts.cache_size, 4 /* num-shard-bits */);
+  table_options.block_cache = rocksdb::NewLRUCache(db_opts.cache_size);
 
   rocksdb::Options options;
   options.allow_os_buffer = db_opts.allow_os_buffer;
@@ -709,15 +707,6 @@ DBStatus DBOpen(DBEngine **db, DBSlice dir, DBOptions db_opts) {
   options.info_log.reset(new DBLogger(db_opts.logging_enabled));
   options.merge_operator.reset(new DBMergeOperator);
   options.table_factory.reset(rocksdb::NewBlockBasedTableFactory(table_options));
-  options.write_buffer_size = 64 << 20;           // 64 MB
-  options.target_file_size_base = 64 << 20;       // 64 MB
-  options.max_bytes_for_level_base = 512 << 20;   // 512 MB
-
-  rocksdb::Env* memenv = NULL;
-  if (dir.len == 0) {
-    memenv = rocksdb::NewMemEnv(rocksdb::Env::Default());
-    options.env = memenv;
-  }
 
   rocksdb::DB *db_ptr;
   rocksdb::Status status = rocksdb::DB::Open(options, ToString(dir), &db_ptr);
@@ -726,7 +715,6 @@ DBStatus DBOpen(DBEngine **db, DBSlice dir, DBOptions db_opts) {
   }
   *db = new DBEngine;
   (*db)->rep = db_ptr;
-  (*db)->memenv = memenv;
   return kSuccess;
 }
 
@@ -737,7 +725,6 @@ DBStatus DBDestroy(DBSlice dir) {
 
 void DBClose(DBEngine* db) {
   delete db->rep;
-  delete db->memenv;
   delete db;
 }
 
@@ -891,12 +878,12 @@ void DBBatchDelete(DBBatch* batch, DBSlice key) {
 DBStatus DBMergeOne(DBSlice existing, DBSlice update, DBString* new_value) {
   new_value->len = 0;
 
-  cockroach::proto::MVCCMetadata meta;
+  proto::MVCCMetadata meta;
   if (!meta.ParseFromArray(existing.data, existing.len)) {
     return ToDBString("corrupted existing value");
   }
 
-  cockroach::proto::MVCCMetadata update_meta;
+  proto::MVCCMetadata update_meta;
   if (!update_meta.ParseFromArray(update.data, update.len)) {
     return ToDBString("corrupted update value");
   }

@@ -63,7 +63,6 @@ func createTestStoreWithEngine(t *testing.T, eng engine.Engine, clock *hlc.Clock
 	sender := kv.NewTxnCoordSender(lSender, clock, false)
 	db := client.NewKV(sender, nil)
 	db.User = storage.UserRoot
-	// TODO(bdarnell): arrange to have the transport closed.
 	store := storage.NewStore(clock, eng, db, g, multiraft.NewLocalRPCTransport())
 	if bootstrap {
 		if err := store.Bootstrap(proto.StoreIdent{NodeID: 1, StoreID: 1}); err != nil {
@@ -125,7 +124,6 @@ func (m *multiTestContext) Stop() {
 	for _, store := range m.stores {
 		store.Stop()
 	}
-	m.transport.Close()
 }
 
 // AddStore creates a new store on the same Transport but doesn't create any ranges.

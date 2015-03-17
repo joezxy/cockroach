@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cockroachdb/cockroach/proto"
 	"github.com/cockroachdb/cockroach/storage/engine"
 	"github.com/cockroachdb/cockroach/util"
 	"github.com/cockroachdb/cockroach/util/hlc"
@@ -124,15 +123,15 @@ func (tq *testQueue) Start(clock *hlc.Clock, stopper *util.Stopper) {
 				}
 				tq.Unlock()
 			case <-stopper.ShouldStop():
-				tq.done = true
 				stopper.SetStopped()
+				tq.done = true
 				return
 			}
 		}
 	}()
 }
 
-func (tq *testQueue) MaybeAdd(rng *Range, now proto.Timestamp) {
+func (tq *testQueue) MaybeAdd(rng *Range) {
 	tq.Lock()
 	defer tq.Unlock()
 	if index := tq.indexOf(rng); index == -1 {
@@ -175,14 +174,12 @@ func TestScannerAddToQueues(t *testing.T) {
 	const count = 3
 	iter := newTestIterator(count)
 	q1, q2 := &testQueue{}, &testQueue{}
-	s := newRangeScanner(1*time.Millisecond, iter)
-	s.AddQueues(q1, q2)
+	s := newRangeScanner(1*time.Millisecond, iter, []rangeQueue{q1, q2})
 	mc := hlc.NewManualClock(0)
 	clock := hlc.NewClock(mc.UnixNano)
-	stopper := util.NewStopper(0)
 
 	// Start queue and verify that all ranges are added to both queues.
-	s.Start(clock, stopper)
+	s.Start(clock)
 	if err := util.IsTrueWithin(func() bool {
 		return q1.count() == count && q2.count() == count
 	}, 50*time.Millisecond); err != nil {
@@ -199,7 +196,7 @@ func TestScannerAddToQueues(t *testing.T) {
 	}
 
 	// Stop scanner and verify both queues are stopped.
-	stopper.Stop()
+	s.Stop()
 	if !q1.isDone() || !q2.isDone() {
 		t.Errorf("expected all queues to stop; got %t, %t", q1.isDone(), q2.isDone())
 	}
@@ -222,14 +219,12 @@ func TestScannerTiming(t *testing.T) {
 	for i, duration := range durations {
 		iter := newTestIterator(count)
 		q := &testQueue{}
-		s := newRangeScanner(duration, iter)
-		s.AddQueues(q)
+		s := newRangeScanner(duration, iter, []rangeQueue{q})
 		mc := hlc.NewManualClock(0)
 		clock := hlc.NewClock(mc.UnixNano)
-		stopper := util.NewStopper(0)
-		defer stopper.Stop()
-		s.Start(clock, stopper)
+		s.Start(clock)
 		time.Sleep(runTime)
+		s.Stop()
 
 		avg := iter.avgScan()
 		log.Infof("%d: average scan: %s\n", i, avg)
@@ -244,14 +239,12 @@ func TestScannerTiming(t *testing.T) {
 func TestScannerEmptyIterator(t *testing.T) {
 	iter := newTestIterator(0)
 	q := &testQueue{}
-	s := newRangeScanner(1*time.Millisecond, iter)
-	s.AddQueues(q)
+	s := newRangeScanner(1*time.Millisecond, iter, []rangeQueue{q})
 	mc := hlc.NewManualClock(0)
 	clock := hlc.NewClock(mc.UnixNano)
-	stopper := util.NewStopper(0)
-	defer stopper.Stop()
-	s.Start(clock, stopper)
+	s.Start(clock)
 	time.Sleep(3 * time.Millisecond)
+	s.Stop()
 	if count := s.Count(); count > 3 {
 		t.Errorf("expected three loops; got %d", count)
 	}
@@ -262,10 +255,7 @@ func TestScannerStats(t *testing.T) {
 	const count = 3
 	iter := newTestIterator(count)
 	q := &testQueue{}
-	stopper := util.NewStopper(0)
-	defer stopper.Stop()
-	s := newRangeScanner(1*time.Millisecond, iter)
-	s.AddQueues(q)
+	s := newRangeScanner(1*time.Millisecond, iter, []rangeQueue{q})
 	mc := hlc.NewManualClock(0)
 	clock := hlc.NewClock(mc.UnixNano)
 	// At start, scanner stats should be blank for MVCC, but have accurate number of ranges.
@@ -275,7 +265,7 @@ func TestScannerStats(t *testing.T) {
 	if vb := s.Stats().MVCC.ValBytes; vb != 0 {
 		t.Errorf("value bytes expected %d; got %d", 0, vb)
 	}
-	s.Start(clock, stopper)
+	s.Start(clock)
 	// We expect a full run to accumulate stats from all ranges.
 	if err := util.IsTrueWithin(func() bool {
 		if rc := s.Stats().RangeCount; rc != count {
@@ -288,4 +278,5 @@ func TestScannerStats(t *testing.T) {
 	}, 100*time.Millisecond); err != nil {
 		t.Error(err)
 	}
+	s.Stop()
 }
