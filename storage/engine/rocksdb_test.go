@@ -24,6 +24,7 @@ import (
 	"os"
 	"reflect"
 	"testing"
+	"time"
 
 	"code.google.com/p/go-uuid/uuid"
 	"github.com/cockroachdb/cockroach/proto"
@@ -71,7 +72,7 @@ func encodeTransaction(timestamp proto.Timestamp, t *testing.T) []byte {
 func TestRocksDBCompaction(t *testing.T) {
 	gob.Register(proto.Timestamp{})
 	loc := util.CreateTempDirectory()
-	rocksdb := NewRocksDB(proto.Attributes{Attrs: []string{"ssd"}}, loc, testCacheSize)
+	rocksdb := newMemRocksDB(proto.Attributes{Attrs: []string{"ssd"}}, testCacheSize)
 	err := rocksdb.Start()
 	if err != nil {
 		t.Fatalf("could not create new rocksdb db instance at %s: %v", loc, err)
@@ -174,7 +175,7 @@ func setupMVCCScanData(numVersions, numKeys int, b *testing.B) *RocksDB {
 		batch := rocksdb.NewBatch()
 		for i := 0; i < numKeys; i++ {
 			if t == 1 {
-				keys[i] = proto.Key(encoding.EncodeVarUint32([]byte("key-"), uint32(i)))
+				keys[i] = proto.Key(encoding.EncodeUvarint([]byte("key-"), uint64(i)))
 				nvs[i] = int(rand.Int31n(int32(numVersions)) + 1)
 			}
 			// Only write values if this iteration is less than the random
@@ -229,7 +230,7 @@ func runMVCCScan(numRows, numVersions int, b *testing.B) {
 		for pb.Next() {
 			// Choose a random key to start scan.
 			keyIdx := rand.Int31n(int32(numKeys - numRows))
-			startKey := proto.Key(encoding.EncodeVarUint32([]byte("key-"), uint32(keyIdx)))
+			startKey := proto.Key(encoding.EncodeUvarint([]byte("key-"), uint64(keyIdx)))
 			walltime := int64(5 * (rand.Int31n(int32(numVersions)) + 1))
 			ts := makeTS(walltime, 0)
 			kvs, err := MVCCScan(rocksdb, startKey, KeyMax, int64(numRows), ts, nil)
@@ -317,7 +318,7 @@ func runMVCCGet(numVersions int, b *testing.B) {
 		for pb.Next() {
 			// Choose a random key to retrieve.
 			keyIdx := rand.Int31n(int32(numKeys))
-			key := proto.Key(encoding.EncodeVarUint32([]byte("key-"), uint32(keyIdx)))
+			key := proto.Key(encoding.EncodeUvarint([]byte("key-"), uint64(keyIdx)))
 			walltime := int64(5 * (rand.Int31n(int32(numVersions)) + 1))
 			ts := makeTS(walltime, 0)
 			if v, err := MVCCGet(rocksdb, key, ts, nil); err != nil {
@@ -343,19 +344,99 @@ func BenchmarkMVCCGet100Versions(b *testing.B) {
 	runMVCCGet(100, b)
 }
 
-// runMVCCMerge merges value numMerges times into numKeys separate keys.
-func runMVCCMerge(value *proto.Value, numMerges, numKeys int, b *testing.B) {
-	loc := util.CreateTempDirectory()
-	rocksdb := NewRocksDB(proto.Attributes{Attrs: []string{"ssd"}}, loc, testCacheSize)
-	if err := rocksdb.Start(); err != nil {
-		b.Fatalf("could not create new rocksdb db instance at %s: %v", loc, err)
-	}
-	defer func(b *testing.B) {
-		rocksdb.Stop()
-		if err := rocksdb.Destroy(); err != nil {
-			b.Errorf("could not delete rocksdb db at %s: %v", loc, err)
+func runMVCCPut(valueSize int, b *testing.B) {
+	rng := util.NewPseudoRand()
+	value := proto.Value{Bytes: util.RandBytes(rng, valueSize)}
+	keyBuf := append(make([]byte, 0, 64), []byte("key-")...)
+
+	rocksdb := NewInMem(proto.Attributes{Attrs: []string{"ssd"}}, testCacheSize)
+	defer rocksdb.Stop()
+
+	b.SetBytes(int64(valueSize))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		key := proto.Key(encoding.EncodeUvarint(keyBuf[0:4], uint64(i)))
+		ts := makeTS(time.Now().UnixNano(), 0)
+		if err := MVCCPut(rocksdb, nil, key, ts, value, nil); err != nil {
+			b.Fatalf("failed put: %s", err)
 		}
-	}(b)
+	}
+
+	b.StopTimer()
+}
+
+func BenchmarkMVCCPut10(b *testing.B) {
+	runMVCCPut(10, b)
+}
+
+func BenchmarkMVCCPut100(b *testing.B) {
+	runMVCCPut(100, b)
+}
+
+func BenchmarkMVCCPut1000(b *testing.B) {
+	runMVCCPut(1000, b)
+}
+
+func BenchmarkMVCCPut10000(b *testing.B) {
+	runMVCCPut(10000, b)
+}
+
+func runMVCCBatchPut(valueSize, batchSize int, b *testing.B) {
+	rng := util.NewPseudoRand()
+	value := proto.Value{Bytes: util.RandBytes(rng, valueSize)}
+	keyBuf := append(make([]byte, 0, 64), []byte("key-")...)
+
+	rocksdb := NewInMem(proto.Attributes{Attrs: []string{"ssd"}}, testCacheSize)
+	defer rocksdb.Stop()
+
+	b.SetBytes(int64(valueSize))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i += batchSize {
+		end := i + batchSize
+		if end > b.N {
+			end = b.N
+		}
+
+		batch := rocksdb.NewBatch()
+
+		for j := i; j < end; j++ {
+			key := proto.Key(encoding.EncodeUvarint(keyBuf[0:4], uint64(j)))
+			ts := makeTS(time.Now().UnixNano(), 0)
+			if err := MVCCPut(batch, nil, key, ts, value, nil); err != nil {
+				b.Fatalf("failed put: %s", err)
+			}
+		}
+
+		if err := batch.Commit(); err != nil {
+			b.Fatal(err)
+		}
+	}
+
+	b.StopTimer()
+}
+
+func BenchmarkMVCCBatch1Put10(b *testing.B) {
+	runMVCCBatchPut(10, 1, b)
+}
+
+func BenchmarkMVCCBatch100Put10(b *testing.B) {
+	runMVCCBatchPut(10, 100, b)
+}
+
+func BenchmarkMVCCBatch10000Put10(b *testing.B) {
+	runMVCCBatchPut(10, 10000, b)
+}
+
+func BenchmarkMVCCBatch100000Put10(b *testing.B) {
+	runMVCCBatchPut(10, 100000, b)
+}
+
+// runMVCCMerge merges value into numKeys separate keys.
+func runMVCCMerge(value *proto.Value, numKeys int, b *testing.B) {
+	rocksdb := NewInMem(proto.Attributes{Attrs: []string{"ssd"}}, testCacheSize)
+	defer rocksdb.Stop()
 
 	// Precompute keys so we don't waste time formatting them at each iteration.
 	keys := make([]proto.Key, numKeys)
@@ -369,10 +450,8 @@ func runMVCCMerge(value *proto.Value, numMerges, numKeys int, b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			ms := MVCCStats{}
-			for i := 0; i < numMerges; i++ {
-				if err := MVCCMerge(rocksdb, &ms, keys[rand.Intn(numKeys)], *value); err != nil {
-					b.Fatal(err)
-				}
+			if err := MVCCMerge(rocksdb, &ms, keys[rand.Intn(numKeys)], *value); err != nil {
+				b.Fatal(err)
 			}
 		}
 	})
@@ -399,7 +478,7 @@ func runMVCCMerge(value *proto.Value, numMerges, numKeys int, b *testing.B) {
 
 // BenchmarkMVCCMergeInteger computes performance of merging integers.
 func BenchmarkMVCCMergeInteger(b *testing.B) {
-	runMVCCMerge(&proto.Value{Integer: gogoproto.Int64(1)}, 1024, 1024, b)
+	runMVCCMerge(&proto.Value{Integer: gogoproto.Int64(1)}, 1024, b)
 }
 
 // BenchmarkMVCCMergeTimeSeries computes performance of merging time series data.
@@ -415,5 +494,5 @@ func BenchmarkMVCCMergeTimeSeries(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	runMVCCMerge(value, 1024, 1024, b)
+	runMVCCMerge(value, 1024, b)
 }
